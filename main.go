@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"a21hc3NpZ25tZW50/service"
 
 	"github.com/gorilla/mux"
-	"github.com/gorilla/sessions"
 	"github.com/joho/godotenv"
 	"github.com/rs/cors"
 )
@@ -16,12 +19,13 @@ import (
 // Initialize the services
 var fileService = &service.FileService{}
 var aiService = &service.AIService{Client: &http.Client{}}
-var store = sessions.NewCookieStore([]byte("my-key"))
 
-func getSession(r *http.Request) *sessions.Session {
-	session, _ := store.Get(r, "chat-session")
-	return session
-}
+// var store = sessions.NewCookieStore([]byte("my-key"))
+
+// func getSession(r *http.Request) *sessions.Session {
+// 	session, _ := store.Get(r, "chat-session")
+// 	return session
+// }
 
 func main() {
 	// Load the .env file
@@ -41,7 +45,53 @@ func main() {
 
 	// File upload endpoint
 	router.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
-		// TODO: answer here
+		file, handler, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		defer file.Close()
+
+		if !strings.HasSuffix(handler.Filename, ".csv") {
+			http.Error(w, "Only .csv files are allowed", http.StatusInternalServerError)
+			return
+		}
+
+		// Membaca file content
+		var buf bytes.Buffer
+		if _, err := io.Copy(&buf, file); err != nil {
+			http.Error(w, "Failed to read file content", http.StatusInternalServerError)
+			return
+		}
+		fileContent := buf.String()
+
+		// process file
+		parsedData, err := fileService.ProcessFile(fileContent)
+		if err != nil {
+			http.Error(w, "Error processing file", http.StatusInternalServerError)
+			return
+		}
+
+		queries := []string{
+			"Find the least electricity usage appliance.",
+			"Find the most electricity usage appliance.",
+		}
+
+		// analisi data
+		answer, err := aiService.AnalyzeFile(parsedData, queries, token)
+		if err != nil {
+			http.Error(w, "Failed to analyze data: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		response := map[string]string{
+			"status": "success",
+			"answer": answer,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+
 	}).Methods("POST")
 
 	// Chat endpoint
