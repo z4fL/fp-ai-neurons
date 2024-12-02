@@ -18,6 +18,11 @@ type AIService struct {
 }
 
 func (s *AIService) AnalyzeData(table map[string][]string, query, token string) (string, error) {
+
+	if len(table) == 0 {
+		return "", errors.New("table cannot be empty")
+	}
+
 	url := "https://api-inference.huggingface.co/models/google/tapas-base-finetuned-wtq"
 	requestData := model.AIRequest{
 		Inputs: model.Inputs{
